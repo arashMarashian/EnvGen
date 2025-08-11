@@ -26,12 +26,65 @@ st.title("Bathymetry Region Selector — Interactive Overlay")
 # Cross-version rerun helper
 RERUN = getattr(st, "rerun", None) or getattr(st, "experimental_rerun", None)
 
+# ---------------- Session state defaults ----------------
+if "roi" not in st.session_state:
+    st.session_state.roi = None           # (south, west, north, east)
+if "bathy_bytes" not in st.session_state:
+    st.session_state.bathy_bytes = None   # cached GeoTIFF bytes for ROI
+if "depth_domain_min" not in st.session_state:
+    st.session_state.depth_domain_min = -200.0
+if "depth_domain_max" not in st.session_state:
+    st.session_state.depth_domain_max = 0.0
+if "depth_range" not in st.session_state:
+    st.session_state.depth_range = (-6.0, 0.0)
+
 # ---------------- Sidebar controls ----------------
 with st.sidebar:
     st.subheader("Overlay Controls")
+
+    # Typed domain (min/max)
+    colA, colB = st.columns(2)
+    with colA:
+        dmin_txt = st.text_input("Domain min (m)", value=str(st.session_state.depth_domain_min))
+    with colB:
+        dmax_txt = st.text_input("Domain max (m)", value=str(st.session_state.depth_domain_max))
+
+    # Parse & validate domain
+    try:
+        domain_min = float(dmin_txt)
+        domain_max = float(dmax_txt)
+    except ValueError:
+        st.warning("Invalid domain values. Reverting to -200..0 m.")
+        domain_min, domain_max = -200.0, 0.0
+
+    if domain_min >= domain_max:
+        st.warning("Domain min must be < domain max. Adjusted automatically.")
+        if domain_min == domain_max:
+            domain_min -= 1.0
+        else:
+            domain_min, domain_max = min(domain_min, domain_max), max(domain_min, domain_max)
+
+    st.session_state.depth_domain_min = domain_min
+    st.session_state.depth_domain_max = domain_max
+
+    # Clamp previous range to the (possibly new) domain
+    lo_prev, hi_prev = st.session_state.depth_range
+    lo_clamped = max(domain_min, min(hi_prev, max(lo_prev, domain_min)))
+    hi_clamped = min(domain_max, max(lo_prev, min(hi_prev, domain_max)))
+    if lo_clamped >= hi_clamped:
+        lo_clamped, hi_clamped = domain_min, domain_max
+
+    # Range slider within domain
     depth_min, depth_max = st.slider(
-        "Depth window (m, negative = depth)", min_value=-200, max_value=0, value=(-6, 0), step=1
+        "Depth window (m, negative = depth)",
+        min_value=float(domain_min),
+        max_value=float(domain_max),
+        value=(float(lo_clamped), float(hi_clamped)),
+        step=1.0,
+        key="depth_slider",
     )
+    st.session_state.depth_range = (depth_min, depth_max)
+
     overlay_opacity = st.slider("Overlay Opacity", 0.0, 1.0, 0.65, 0.05)
     cmap_name = st.selectbox("Colormap", ["viridis", "plasma", "magma", "inferno", "cividis"])
     basemap_choice = st.selectbox("Basemap (initial)", ["Esri.WorldImagery (satellite)", "OpenStreetMap"])
@@ -56,12 +109,6 @@ with st.sidebar:
         lock_selection = st.button("Lock/Update Region", type="primary")
     with col2:
         clear_selection = st.button("Clear ROI")
-
-# ---------------- Session state ----------------
-if "roi" not in st.session_state:
-    st.session_state.roi = None           # (south, west, north, east)
-if "bathy_bytes" not in st.session_state:
-    st.session_state.bathy_bytes = None   # cached GeoTIFF bytes for ROI
 
 # ---------------- Helpers ----------------
 def parse_kml_coords(s: str):
@@ -135,7 +182,7 @@ def make_overlay_data_url(arr_img: np.ndarray, vmin: float, vmax: float, cmap_na
     rgba = cmap(norm(np.ma.masked_invalid(data)))      # float 0..1
     rgba_uint8 = (rgba * 255).astype(np.uint8)         # uint8
 
-    # IMPORTANT: do NOT flip here; array is already oriented.
+    # Array already oriented — no flip here.
     buf = io.BytesIO()
     Image.fromarray(rgba_uint8).save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
@@ -188,6 +235,7 @@ else:
         arr_img, (south, west, north, east) = read_bathy_image_and_bounds_from_bytes(st.session_state.bathy_bytes)
 
         # Build base64 overlay
+        depth_min, depth_max = st.session_state.depth_range
         overlay_url, visible = make_overlay_data_url(arr_img, depth_min, depth_max, cmap_name)
         st.caption(f"Pixels within [{depth_min}, {depth_max}] m: {visible}")
 
