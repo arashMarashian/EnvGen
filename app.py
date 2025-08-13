@@ -111,6 +111,26 @@ with st.sidebar:
         clear_selection = st.button("Clear ROI")
 
 # ---------------- Helpers ----------------
+def get_minmax_from_bytes(tif_bytes: bytes):
+    """Return (data_min, data_max) from GeoTIFF band 1, ignoring nodata/NaN."""
+    with MemoryFile(tif_bytes) as memfile:
+        with memfile.open() as src:
+            arr = src.read(1).astype(float)
+            if src.nodata is not None:
+                arr[arr == src.nodata] = np.nan
+            # Use oriented array so numbers match what you'll visualize
+            left, bottom, right, top = src.bounds
+            a = src.transform.a
+            e = src.transform.e
+            arr_img = arr.copy()
+            if e > 0:  # south-up -> flip vertically
+                arr_img = np.flipud(arr_img)
+            if a < 0:  # x increases to the left -> flip horizontally
+                arr_img = np.fliplr(arr_img)
+            data_min = float(np.nanmin(arr_img))
+            data_max = float(np.nanmax(arr_img))
+            return data_min, data_max
+
 def parse_kml_coords(s: str):
     """Parse 'lon,lat,alt lon,lat,alt ...' into arrays of lons/lats."""
     s = s.strip()
@@ -221,10 +241,33 @@ if st.session_state.roi is None:
                     with st.spinner("Downloading bathymetry…"):
                         st.session_state.bathy_bytes = download_bathy_bytes(south, north, west, east)
                     st.session_state.roi = (south, west, north, east)
+
+                    # --- NEW: auto-fit domain and set initial depth window at max ---
+                    try:
+                        data_min, data_max = get_minmax_from_bytes(st.session_state.bathy_bytes)
+                        # Update domain to actual data range
+                        st.session_state.depth_domain_min = data_min
+                        st.session_state.depth_domain_max = data_max
+
+                        # Initial depth window at the very top (max). Keep slider valid.
+                        if (data_max - data_min) >= 1.0:
+                            st.session_state.depth_range = (data_max - 1.0, data_max)
+                        else:
+                            # If extremely narrow range, just use the whole thing
+                            st.session_state.depth_range = (data_min, data_max)
+                    except Exception as mm_err:
+                        # If min/max detection fails, fall back but keep the ROI locked
+                        st.warning(f"Could not auto-detect depth range: {mm_err}. Using defaults.")
+                        st.session_state.depth_domain_min = -200.0
+                        st.session_state.depth_domain_max = 0.0
+                        st.session_state.depth_range = (-6.0, 0.0)
+                    # --- END NEW ---
+
                     st.success("Region locked.")
                     if RERUN: RERUN()
                 except requests.HTTPError as e:
                     st.error(f"Download failed: HTTP {e.response.status_code} — {e.response.text[:300]}")
+
 else:
     # ROI locked — render overlay every rerun
     south, west, north, east = st.session_state.roi
