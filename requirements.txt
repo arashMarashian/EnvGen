@@ -1,3 +1,8 @@
 streamlit
-streamlit-folium
+matplotlib
+numpy
+requests
 folium
+streamlit-folium
+pillow
+rasterio
