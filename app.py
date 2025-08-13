@@ -242,19 +242,26 @@ if st.session_state.roi is None:
                         st.session_state.bathy_bytes = download_bathy_bytes(south, north, west, east)
                     st.session_state.roi = (south, west, north, east)
 
-                    # --- NEW: auto-fit domain and set initial depth window at max ---
+                    # --- NEW: auto-fit domain and set slider to [min, 0] (or [min, max] if no zero) ---
                     try:
                         data_min, data_max = get_minmax_from_bytes(st.session_state.bathy_bytes)
+
+                        # Ensure a valid domain (strictly increasing)
+                        if data_min == data_max:
+                            data_min -= 1e-6  # tiny span so slider won't break
+
                         # Update domain to actual data range
                         st.session_state.depth_domain_min = data_min
                         st.session_state.depth_domain_max = data_max
 
-                        # Initial depth window at the very top (max). Keep slider valid.
-                        if (data_max - data_min) >= 1.0:
-                            st.session_state.depth_range = (data_max - 1.0, data_max)
-                        else:
-                            # If extremely narrow range, just use the whole thing
-                            st.session_state.depth_range = (data_min, data_max)
+                        # Right side: 0 if inside domain, else data_max
+                        right = 0.0 if (data_min <= 0.0 <= data_max) else data_max
+                        # Left side: the domain min
+                        left = data_min
+
+                        # Write desired slider value into session state before rerun
+                        st.session_state.depth_range = (left, right)
+
                     except Exception as mm_err:
                         # If min/max detection fails, fall back but keep the ROI locked
                         st.warning(f"Could not auto-detect depth range: {mm_err}. Using defaults.")
@@ -262,6 +269,7 @@ if st.session_state.roi is None:
                         st.session_state.depth_domain_max = 0.0
                         st.session_state.depth_range = (-6.0, 0.0)
                     # --- END NEW ---
+
 
                     st.success("Region locked.")
                     if RERUN: RERUN()
