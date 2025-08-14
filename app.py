@@ -19,7 +19,7 @@ from rasterio.io import MemoryFile
 # ---------------- App / Auth Config ----------------
 st.set_page_config(page_title="EnvGen - Bathymetry Tool (Interactive)", layout="wide")
 
-# Cross-version rerun helper (define EARLY and use everywhere)
+# Cross-version rerun helper
 RERUN = getattr(st, "rerun", None) or getattr(st, "experimental_rerun", None)
 
 # Config / secrets
@@ -31,23 +31,31 @@ if "auth_ok" not in st.session_state:
     st.session_state.auth_ok = False
 
 def login_view() -> bool:
-    st.title("🔒 EnvGen — Login")
-    st.write("This app is restricted. Please enter the access password.")
-    with st.form("login"):
-        pwd = st.text_input("Access password", type="password")
-        submitted = st.form_submit_button("Enter")
-        if submitted:
-            if pwd == st.secrets.get("APP_PASSWORD", ""):
-                st.session_state.auth_ok = True
-                # Force a clean rerun into the app immediately
-                if RERUN:
-                    RERUN()
-                # Fallback: stop this run; next run will see auth_ok=True
-                st.stop()
-            else:
-                st.error("Wrong password")
-    # Not authenticated yet → stay on login view
-    return st.session_state.auth_ok
+    """Returns True if authenticated, otherwise renders login UI and returns False."""
+    # If already authed, don't render the login UI at all.
+    if st.session_state.get("auth_ok", False):
+        return True
+
+    # Render login UI inside a placeholder so we can clear it
+    ph = st.empty()
+    with ph.container():
+        st.title("🔒 EnvGen — Login")
+        st.write("This app is restricted. Please enter the access password.")
+        with st.form("login"):
+            pwd = st.text_input("Access password", type="password")
+            submitted = st.form_submit_button("Enter")
+            if submitted:
+                if pwd == st.secrets.get("APP_PASSWORD", ""):
+                    st.session_state.auth_ok = True
+                    ph.empty()  # remove login UI instantly
+                    if RERUN:
+                        RERUN()   # jump straight into the app
+                    # Fallback in older versions
+                    st.stop()
+                else:
+                    st.error("Wrong password")
+
+    return False
 
 if not login_view():
     st.stop()
