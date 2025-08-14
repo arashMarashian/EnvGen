@@ -29,16 +29,18 @@ if "auth_ok" not in st.session_state:
 
 def login_view():
     st.title("🔒 EnvGen — Login")
-    st.write("This app is restricted. Please enter the access password.")
     with st.form("login"):
         pwd = st.text_input("Access password", type="password")
         submitted = st.form_submit_button("Enter")
         if submitted:
             if pwd == st.secrets.get("APP_PASSWORD", ""):
                 st.session_state.auth_ok = True
-                st.experimental_rerun()  # refresh into the app
             else:
                 st.error("Wrong password")
+    # After submit, Streamlit reruns automatically. If not logged in yet, stop here.
+    if not st.session_state.get("auth_ok", False):
+        st.stop()
+
 
 if not st.session_state.auth_ok:
     login_view()
