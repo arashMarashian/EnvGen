@@ -16,8 +16,12 @@ from matplotlib import colors
 import rasterio
 from rasterio.io import MemoryFile
 
-# ---------------- App / Auth Config ----------------
+# --- App / Auth Config ---
 st.set_page_config(page_title="EnvGen - Bathymetry Tool (Interactive)", layout="wide")
+
+# 🔑 Put these right after imports (BEFORE helpers/functions)
+API_KEY = st.secrets.get("OPENTOPO_API_KEY", "23016192f2637c9b8fc6137bcfc852df")
+DEMTYPE = st.secrets.get("DEMTYPE", "SRTM15Plus")
 
 # ---- SIMPLE LOGIN (shared password via secrets) ----
 if "auth_ok" not in st.session_state:
