@@ -16,11 +16,37 @@ from matplotlib import colors
 import rasterio
 from rasterio.io import MemoryFile
 
-# ---------------- Config ----------------
-API_KEY = "23016192f2637c9b8fc6137bcfc852df"   # your key
-DEMTYPE = "SRTM15Plus"                         # or GEBCO variant if enabled
-
+# ---------------- App / Auth Config ----------------
 st.set_page_config(page_title="EnvGen - Bathymetry Tool (Interactive)", layout="wide")
+
+# ---- SIMPLE LOGIN (shared password via secrets) ----
+if "auth_ok" not in st.session_state:
+    st.session_state.auth_ok = False
+
+def login_view():
+    st.title("🔒 EnvGen — Login")
+    st.write("This app is restricted. Please enter the access password.")
+    with st.form("login"):
+        pwd = st.text_input("Access password", type="password")
+        submitted = st.form_submit_button("Enter")
+        if submitted:
+            if pwd == st.secrets.get("APP_PASSWORD", ""):
+                st.session_state.auth_ok = True
+                st.experimental_rerun()  # refresh into the app
+            else:
+                st.error("Wrong password")
+
+if not st.session_state.auth_ok:
+    login_view()
+    st.stop()
+
+# Optional: logout in the sidebar
+with st.sidebar:
+    if st.button("Logout"):
+        st.session_state.auth_ok = False
+        st.experimental_rerun()
+# ---- END LOGIN ----
+
 st.title("Bathymetry Region Selector — Interactive Overlay")
 
 # Cross-version rerun helper
@@ -242,34 +268,22 @@ if st.session_state.roi is None:
                         st.session_state.bathy_bytes = download_bathy_bytes(south, north, west, east)
                     st.session_state.roi = (south, west, north, east)
 
-                    # --- NEW: auto-fit domain and set slider to [min, 0] (or [min, max] if no zero) ---
+                    # --- auto-fit domain and set slider to [min, 0] (or [min, max] if no zero) ---
                     try:
                         data_min, data_max = get_minmax_from_bytes(st.session_state.bathy_bytes)
-
-                        # Ensure a valid domain (strictly increasing)
                         if data_min == data_max:
-                            data_min -= 1e-6  # tiny span so slider won't break
-
-                        # Update domain to actual data range
+                            data_min -= 1e-6
                         st.session_state.depth_domain_min = data_min
                         st.session_state.depth_domain_max = data_max
-
-                        # Right side: 0 if inside domain, else data_max
                         right = 0.0 if (data_min <= 0.0 <= data_max) else data_max
-                        # Left side: the domain min
                         left = data_min
-
-                        # Write desired slider value into session state before rerun
                         st.session_state.depth_range = (left, right)
-
                     except Exception as mm_err:
-                        # If min/max detection fails, fall back but keep the ROI locked
                         st.warning(f"Could not auto-detect depth range: {mm_err}. Using defaults.")
                         st.session_state.depth_domain_min = -200.0
                         st.session_state.depth_domain_max = 0.0
                         st.session_state.depth_range = (-6.0, 0.0)
-                    # --- END NEW ---
-
+                    # --- END ---
 
                     st.success("Region locked.")
                     if RERUN: RERUN()

@@ -6,3 +6,4 @@ folium
 streamlit-folium
 pillow
 rasterio
+streamlit-authenticator
